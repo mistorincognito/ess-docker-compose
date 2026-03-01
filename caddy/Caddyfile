@@ -278,3 +278,12 @@ rtc.example.test:443 {
         reverse_proxy livekit:7880
     }
 }
+
+# =========================
+# Element Call Frontend
+# =========================
+call.example.test:443 {
+    tls internal
+
+    reverse_proxy element-call:8080
+}

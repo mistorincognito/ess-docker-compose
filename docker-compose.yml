@@ -212,6 +212,20 @@ services:
     depends_on:
       - livekit
 
+  # Element Call frontend — self-hosted web app for video/voice calls
+  # Reads livekit_service_url from .well-known/matrix/client (rtc_foci) automatically.
+  # No extra configuration needed: homeserver details are passed as URL params by Element Web.
+  element-call:
+    profiles:
+      - element-call
+    image: ghcr.io/element-hq/element-call:latest
+    container_name: matrix-element-call
+    restart: unless-stopped
+    ports:
+      - "8083:8080"
+    networks:
+      - matrix-network
+
   # Authelia SSO (Optional - use profile "authelia" to enable)
   authelia:
     profiles:

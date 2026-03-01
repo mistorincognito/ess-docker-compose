@@ -220,6 +220,7 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
     AUTH_DOMAIN="auth.example.test"
     AUTHELIA_DOMAIN="authelia.example.test"
     RTC_DOMAIN="rtc.example.test"
+    CALL_DOMAIN="call.example.test"
 
     echo -e "${CYAN}Local Testing Configuration:${NC}"
     echo -e "  Matrix API:  https://${MATRIX_DOMAIN}"
@@ -227,12 +228,13 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
     echo -e "  MAS Auth:    https://${AUTH_DOMAIN}"
     echo -e "  Authelia:    https://${AUTHELIA_DOMAIN}"
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
-        echo -e "  Element Call: https://${RTC_DOMAIN}"
+        echo -e "  Element Call: https://${CALL_DOMAIN}"
+        echo -e "  LiveKit RTC:  https://${RTC_DOMAIN}"
     fi
     echo ""
     HOSTS_DOMAINS="${MATRIX_DOMAIN} ${ELEMENT_DOMAIN} ${AUTH_DOMAIN} ${AUTHELIA_DOMAIN}"
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
-        HOSTS_DOMAINS="${HOSTS_DOMAINS} ${RTC_DOMAIN}"
+        HOSTS_DOMAINS="${HOSTS_DOMAINS} ${RTC_DOMAIN} ${CALL_DOMAIN}"
     fi
     echo -e "${YELLOW}⚠ Remember to add these to /etc/hosts:${NC}"
     echo -e "  127.0.0.1  ${HOSTS_DOMAINS}"
@@ -277,11 +279,14 @@ else
     AUTHELIA_SUBDOMAIN=${AUTHELIA_SUBDOMAIN:-authelia}
     AUTHELIA_DOMAIN="${AUTHELIA_SUBDOMAIN}.${DOMAIN_BASE}"
 
-    # RTC subdomain (Element Call)
+    # RTC subdomain (LiveKit signaling) + Call subdomain (Element Call frontend)
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
-        read -p "Enter RTC subdomain for Element Call [default: rtc]: " RTC_SUBDOMAIN
+        read -p "Enter RTC subdomain for LiveKit [default: rtc]: " RTC_SUBDOMAIN
         RTC_SUBDOMAIN=${RTC_SUBDOMAIN:-rtc}
         RTC_DOMAIN="${RTC_SUBDOMAIN}.${DOMAIN_BASE}"
+        read -p "Enter subdomain for Element Call frontend [default: call]: " CALL_SUBDOMAIN
+        CALL_SUBDOMAIN=${CALL_SUBDOMAIN:-call}
+        CALL_DOMAIN="${CALL_SUBDOMAIN}.${DOMAIN_BASE}"
     fi
 
     echo ""
@@ -416,8 +421,9 @@ fi
 if [[ "$USE_ELEMENT_CALL" == true ]]; then
     cat >> .env << EOF
 
-# Element Call (LiveKit)
+# Element Call (LiveKit + self-hosted frontend)
 RTC_DOMAIN=${RTC_DOMAIN}
+CALL_DOMAIN=${CALL_DOMAIN}
 LIVEKIT_SECRET=${LIVEKIT_SECRET}
 EOF
 fi
@@ -764,7 +770,7 @@ if [[ "$USE_ELEMENT_CALL" == true ]]; then
         "feature_element_call_video_rooms": true'
     ELEMENT_CALL_BLOCK=',
     "element_call": {
-        "url": "https://call.element.io",
+        "url": "https://'"${CALL_DOMAIN}"'",
         "participant_limit": 8,
         "brand": "Element Call"
     }'
@@ -924,7 +930,7 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
     # Pre-build JSON blobs for the local Caddyfile (single-line, no literal \n)
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
         LOCAL_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"},\"org.matrix.msc4143.rtc_foci\":[{\"type\":\"livekit\",\"livekit_service_url\":\"https://${RTC_DOMAIN}/livekit/jwt\"}]}"
-        LOCAL_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://call.element.io\",\"participant_limit\":8,\"brand\":\"Element Call\"}}"
+        LOCAL_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://${CALL_DOMAIN}\",\"participant_limit\":8,\"brand\":\"Element Call\"}}"
     else
         LOCAL_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"}}"
         LOCAL_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true}}"
@@ -1199,7 +1205,7 @@ ${ADMIN_DOMAIN}:443 {
 }
 EOF
 
-    # Append Element Call block if enabled
+    # Append Element Call blocks if enabled
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
         cat >> caddy/Caddyfile << EOF
 
@@ -1216,6 +1222,15 @@ ${RTC_DOMAIN}:443 {
     handle_path /livekit/sfu* {
         reverse_proxy livekit:7880
     }
+}
+
+# =========================
+# Element Call Frontend
+# =========================
+${CALL_DOMAIN}:443 {
+    tls internal
+
+    reverse_proxy element-call:8080
 }
 EOF
     fi
@@ -1347,7 +1362,7 @@ if [[ "$DEPLOYMENT_MODE" == "production" ]]; then
     # Pre-build conditional JSON blobs for the Caddyfile
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
         PROD_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"},\"org.matrix.msc4143.rtc_foci\":[{\"type\":\"livekit\",\"livekit_service_url\":\"https://${RTC_DOMAIN}/livekit/jwt\"}]}"
-        PROD_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://call.element.io\",\"participant_limit\":8,\"brand\":\"Element Call\"}}"
+        PROD_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://${CALL_DOMAIN}\",\"participant_limit\":8,\"brand\":\"Element Call\"}}"
     else
         PROD_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"}}"
         PROD_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true}}"
@@ -1505,7 +1520,7 @@ ${ADMIN_DOMAIN} {
 }
 EOF
 
-    # Append Element Call block to production Caddyfile if enabled
+    # Append Element Call blocks to production Caddyfile if enabled
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
         cat >> caddy/Caddyfile.production << EOF
 
@@ -1520,6 +1535,13 @@ ${RTC_DOMAIN} {
     handle_path /livekit/sfu* {
         reverse_proxy ${MATRIX_SERVER_IP}:7880
     }
+}
+
+# =========================
+# Element Call Frontend
+# =========================
+${CALL_DOMAIN} {
+    reverse_proxy ${MATRIX_SERVER_IP}:8083
 }
 EOF
     fi
@@ -1559,6 +1581,7 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
         echo -e "  • Authelia:     https://${AUTHELIA_DOMAIN}"
     fi
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        echo -e "  • Element Call: https://${CALL_DOMAIN}"
         echo -e "  • LiveKit JWT:  https://${RTC_DOMAIN}/livekit/jwt"
     fi
     echo -e "  • Caddy Admin:  http://localhost:2019"
@@ -1624,6 +1647,7 @@ else
     echo -e "   • ${AUTHELIA_DOMAIN}"
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
         echo -e "   • ${RTC_DOMAIN}"
+        echo -e "   • ${CALL_DOMAIN}"
     fi
     echo ""
     echo -e "${CYAN}4. Configure Firewall:${NC}"
@@ -1645,6 +1669,7 @@ else
     echo -e "  • MAS (Auth):   https://${AUTH_DOMAIN}"
     echo -e "  • Authelia:     https://${AUTHELIA_DOMAIN}"
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
+        echo -e "  • Element Call: https://${CALL_DOMAIN}"
         echo -e "  • LiveKit JWT:  https://${RTC_DOMAIN}/livekit/jwt"
     fi
     echo ""

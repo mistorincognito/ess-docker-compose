@@ -1,181 +1,152 @@
 # Matrix Server - Docker Compose Setup
 
-A complete, production-ready Matrix server stack with modern authentication and web client.
+A self-hosted Matrix server stack with modern OIDC authentication, web client, optional video calling, and optional messaging bridges.
 
 ## What's Included
 
-- **Synapse** - Matrix homeserver
-- **Matrix Authentication Service (MAS)** - Modern OIDC-based authentication
-- **Element Web** - Web client interface
-- **Element Admin** - Admin dashboard
-- **PostgreSQL** - Database backend
-- **Caddy** - Reverse proxy with automatic HTTPS
+**Core (always on)**
+- [Synapse](https://github.com/element-hq/synapse) — Matrix homeserver
+- [Matrix Authentication Service (MAS)](https://github.com/element-hq/matrix-authentication-service) — OIDC-based authentication
+- [Element Web](https://github.com/element-hq/element-web) — Web client
+- [Element Admin](https://github.com/element-hq/element-admin) — Admin dashboard
+- [PostgreSQL 16](https://www.postgresql.org/) — Database
+- [Caddy](https://caddyserver.com/) — Reverse proxy with automatic HTTPS
 
-## Features
+**Optional: Element Call** (`--profile element-call`)
+- [LiveKit](https://livekit.io/) — WebRTC SFU media server (self-hosted, media stays on your server)
+- [lk-jwt-service](https://github.com/element-hq/lk-jwt-service) — LiveKit token issuer
+- [Element Call](https://github.com/element-hq/element-call) — Self-hosted video/voice calling frontend
 
-- Clean template-based configuration
-- Optional upstream OIDC integration (Authelia, Keycloak, etc.)
-- Separate or combined deployment options
-- Comprehensive documentation
-- Production-ready security defaults
+**Optional: Messaging Bridges** (via `setup-bridges.sh`)
+- [mautrix-whatsapp](https://github.com/mautrix/whatsapp) — WhatsApp bridge
+- [mautrix-signal](https://github.com/mautrix/signal) — Signal bridge
+- [mautrix-telegram](https://github.com/mautrix/telegram) — Telegram bridge (requires API credentials)
+
+**Optional: Upstream OIDC** (`--profile authelia`)
+- [Authelia](https://www.authelia.com/) — SSO / identity provider
 
 ## Quick Start
 
-1. **Copy templates and configure:**
-   ```bash
-   cp templates/docker-compose.yml .
-   cp templates/.env.template .env
-   cp templates/homeserver.yaml synapse/config/
-   cp templates/mas-config.yaml mas/config/
-   cp templates/element-config.json element/config/
-   ```
+```bash
+./deploy.sh
+```
 
-2. **Follow the setup guide:**
+The script handles everything interactively: generates secrets, writes configs, starts Docker services. It asks whether to enable Element Call and optionally Authelia.
 
-   See **[SETUP.md](SETUP.md)** for complete step-by-step instructions including:
-   - Secret generation
-   - Configuration placeholders
-   - DNS setup
-   - Reverse proxy configuration
-   - First user creation
-   - Troubleshooting
+Bridges are set up separately after the core stack is running:
 
-3. **Start the stack:**
-   ```bash
-   docker compose up -d
-   ```
+```bash
+./setup-bridges.sh
+```
 
 ## Architecture
 
 ```
-Internet (HTTPS)
-    ↓
-Caddy Reverse Proxy
-    ↓
-┌─────────────────────────────────────────┐
-│  Matrix Stack                           │
-│  ┌──────────┬──────────┬──────────┐    │
-│  │ Element  │ Synapse  │   MAS    │    │
-│  │   Web    │  :8008   │  :8080   │    │
-│  └──────────┴─────┬────┴─────┬────┘    │
-│                   │          │          │
-│              ┌────▼──────────▼────┐    │
-│              │   PostgreSQL       │    │
-│              └────────────────────┘    │
-└─────────────────────────────────────────┘
+Browser
+  |
+Caddy (HTTPS, Let's Encrypt)
+  |
+  +-- matrix.example.com  -->  Synapse :8008
+  |     /.well-known       -->  (inline, served by Caddy)
+  |     /login, /logout    -->  MAS :8080
+  +-- auth.example.com    -->  MAS :8080
+  +-- element.example.com -->  Element Web :80
+  +-- admin.example.com   -->  Element Admin :8080
+  +-- call.example.com    -->  Element Call :8080   (optional)
+  +-- rtc.example.com     -->  lk-jwt-service :8080 (optional)
+                               LiveKit :7880         (optional)
 ```
 
-## Documentation
+All services communicate over an internal Docker network. The database is not exposed.
 
-- **[SETUP.md](SETUP.md)** - Complete setup guide with all configuration details
-- **templates/** - Clean configuration templates for all services
+## Deployment Options
 
-## Authentication Options
+**Local testing** — self-signed certificates, all services on localhost:
+```bash
+docker compose -f docker-compose.yml -f compose-variants/docker-compose.local.yml up -d
+```
 
-### MAS Only (Default)
-- Built-in authentication via Matrix Authentication Service
-- User accounts managed within Matrix
-- Simpler setup, fewer dependencies
+**Single server** — production with Caddy on the same machine:
+```bash
+./deploy.sh  # choose "single server" mode
+```
 
-### With Upstream OIDC (Optional)
-- Integrate with existing identity providers (Authelia, Keycloak, etc.)
-- Centralized authentication across services
-- Single Sign-On (SSO) support
+**Multi-server** — Matrix backend on one machine, Caddy on another:
+```bash
+./deploy.sh  # choose "multi server" mode
+```
+The script generates a `caddy/Caddyfile.production` for the Caddy machine.
 
-See [SETUP.md](SETUP.md) Step 5 for OIDC configuration.
+## Element Call
 
-## Configuration Templates
+When enabled, all three components are self-hosted. Media streams never leave your server (they route through your LiveKit SFU). The Element Call frontend is served from your own `call.` subdomain instead of `call.element.io`.
 
-The `templates/` directory contains:
+Required open ports for LiveKit:
+- TCP 7881 (WebRTC signaling)
+- UDP 50100–50200 (media streams)
 
-- `docker-compose.yml` - Service orchestration
-- `.env.template` - Environment variables with secret generation guidance
-- `homeserver.yaml` - Synapse configuration
-- `mas-config.yaml` - MAS configuration with optional OIDC
-- `element-config.json` - Element Web client configuration
-- `Caddyfile` - Reverse proxy configuration
-- `authelia-client.yml` - Example OIDC client config for Authelia
+## Bridges
 
-All templates use `{{PLACEHOLDER}}` format for easy find-and-replace.
+`setup-bridges.sh` configures WhatsApp and Signal automatically. Telegram requires API credentials from [my.telegram.org](https://my.telegram.org) — add them to `.env` before running:
 
-## Deployment Scenarios
+```
+TELEGRAM_API_ID=your_id
+TELEGRAM_API_HASH=your_hash
+```
 
-### Single Server
-Run everything (Matrix + Caddy) on one machine.
-
-### Multi-Server
-- Matrix stack on dedicated server
-- Caddy reverse proxy on separate edge server
-- Optional: Authelia on separate authentication server
-
-See [SETUP.md](SETUP.md) Step 7 for details.
+Bridges use double puppet support (users in Matrix rooms appear as themselves, not the bridge bot) and have encryption disabled for compatibility with MAS.
 
 ## Requirements
 
-- Docker and Docker Compose
-- Domain name with DNS configured
-- Ports 80, 443 accessible (for HTTPS/certificates)
+- Docker and Docker Compose v2
+- A domain with DNS control
+- Ports 80 and 443 accessible from the internet
+- For Element Call: ports 7881/TCP and 50100–50200/UDP open
 
 ## Common Operations
 
 ```bash
-# Check service status
+# Status
 docker compose ps
 
-# View logs
-docker compose logs -f
+# Logs
+docker compose logs -f [service]
 
-# Restart services
-docker compose restart
+# Restart a service
+docker compose restart synapse
 
-# Stop all services
-docker compose down
+# Update all images
+docker compose pull && docker compose up -d
 
-# Update images
-docker compose pull
-docker compose up -d
+# Bridge logs
+docker compose logs mautrix-whatsapp
 ```
 
-## Security
+## Data Directories
 
-- HTTPS enforced via Caddy with automatic Let's Encrypt certificates
-- Strong secret generation required (see SETUP.md Step 2)
-- Database passwords must be synchronized across configs
-- Admin interface access should be restricted by IP
-
-See [SETUP.md](SETUP.md) for security considerations and hardening.
-
-## Backup
-
-Essential data directories:
 ```
-postgres/data/    - Database
-synapse/data/     - Synapse media and state
-mas/data/         - MAS sessions
-.env              - Secrets and configuration
+postgres/data/    database
+synapse/data/     media store, signing keys
+mas/data/         MAS sessions
+.env              all secrets and domain config
 ```
 
-Backup command:
+Backup:
 ```bash
-tar -czf matrix-backup-$(date +%Y%m%d).tar.gz \
-  postgres/data \
-  synapse/data \
-  mas/data \
-  .env
+tar -czf matrix-backup-$(date +%Y%m%d).tar.gz postgres/data synapse/data mas/data .env
 ```
 
-## Support
+## Documentation
 
-- **Matrix Synapse**: https://github.com/element-hq/synapse
-- **MAS**: https://github.com/element-hq/matrix-authentication-service
-- **Element Web**: https://github.com/element-hq/element-web
-- **Setup Issues**: See [SETUP.md](SETUP.md) Troubleshooting section
+- [SETUP.md](SETUP.md) — manual setup reference
+- [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) — production checklist
+- [BRIDGE_SETUP_GUIDE.md](BRIDGE_SETUP_GUIDE.md) — bridge configuration details
 
 ## License
 
-This setup uses the following open-source components:
-- Matrix Synapse: Apache 2.0
+- Synapse: Apache 2.0
 - Matrix Authentication Service: Apache 2.0
-- Element Web: Apache 2.0
+- Element Web / Element Admin / Element Call: Apache 2.0
 - PostgreSQL: PostgreSQL License
 - Caddy: Apache 2.0
+- LiveKit: Apache 2.0
