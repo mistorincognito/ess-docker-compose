@@ -139,7 +139,7 @@ docker exec matrix-postgres psql -U synapse -tc "SELECT 1 FROM pg_database WHERE
 
 # Add registrations to Synapse (including double puppet)
 echo "Registering appservices with Synapse..."
-if ! grep -q "app_service_config_files:" synapse/data/homeserver.yaml; then
+if ! sudo grep -q "^app_service_config_files:" synapse/data/homeserver.yaml; then
     echo -e "\n# Appservice registrations (bridges and double puppet)\napp_service_config_files:" | sudo tee -a synapse/data/homeserver.yaml > /dev/null
 fi
 
