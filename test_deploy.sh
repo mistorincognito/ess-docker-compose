@@ -96,6 +96,7 @@ cleanup_configs() {
     rm -f .env mas-signing.key authelia_private.pem
     rm -f caddy/Caddyfile caddy/Caddyfile.production
     rm -f livekit/livekit.yaml
+    rm -f appservices/doublepuppet.yaml
     # These may be root-owned from docker run or previous deploys
     sudo rm -f mas/config/config.yaml 2>/dev/null || true
     sudo rm -f element/config/config.json 2>/dev/null || true
@@ -168,6 +169,21 @@ assert_configs() {
     # Synapse may quote the value: `server_name: "example.test"` or `server_name: example.test`
     assert_matches "synapse/data/homeserver.yaml" \
         "^server_name: \"?${server_name//./\\.}\"?" "Synapse → server_name"
+    assert_contains "synapse/data/homeserver.yaml" \
+        "app_service_config_files:"                          "Synapse → app_service_config_files present"
+    assert_contains "synapse/data/homeserver.yaml" \
+        "/appservices/doublepuppet.yaml"                     "Synapse → doublepuppet.yaml registered"
+
+    # Double-puppeting appservice
+    assert_file "appservices/doublepuppet.yaml" "appservices/doublepuppet.yaml generated"
+    assert_contains "appservices/doublepuppet.yaml" \
+        "id: doublepuppet"                                   "doublepuppet.yaml → id"
+    assert_contains "appservices/doublepuppet.yaml" \
+        "url: null"                                          "doublepuppet.yaml → url null"
+    assert_contains "appservices/doublepuppet.yaml" \
+        "as_token:"                                          "doublepuppet.yaml → as_token present"
+    assert_contains "appservices/doublepuppet.yaml" \
+        "@.*:${server_name}"                                 "doublepuppet.yaml → user regex matches server_name"
 
     # Caddyfile (JSON blobs are compact, no spaces around ':')
     assert_file "caddy/Caddyfile" "caddy/Caddyfile generated"

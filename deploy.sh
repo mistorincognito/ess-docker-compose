@@ -433,6 +433,7 @@ mkdir -p synapse/data
 mkdir -p postgres/data
 mkdir -p caddy/data caddy/config
 mkdir -p bridges/{telegram,whatsapp,signal}/config
+mkdir -p appservices
 print_status "Directory structure created"
 echo ""
 
@@ -449,6 +450,8 @@ AUTHELIA_SESSION_SECRET=$(generate_secret)
 AUTHELIA_STORAGE_ENCRYPTION_KEY=$(generate_secret)
 MAS_SECRET_KEY=$(generate_hex_secret)  # MAS requires hex format
 SYNAPSE_SHARED_SECRET=$(generate_secret)
+DOUBLEPUPPET_AS_TOKEN=$(generate_hex_secret)
+DOUBLEPUPPET_HS_TOKEN=$(generate_hex_secret)
 if [[ "$USE_ELEMENT_CALL" == true ]]; then
     LIVEKIT_SECRET=$(generate_secret)
 fi
@@ -976,6 +979,10 @@ sed -i '/^# Experimental features$/d' synapse/data/homeserver.yaml
 sed -i '/^# Enable registration/d' synapse/data/homeserver.yaml
 sed -i '/^enable_registration:/d' synapse/data/homeserver.yaml
 
+# Remove old double-puppeting appservice registration if present (prevents duplication on re-run)
+sed -i '/^# Double-puppeting appservice/d' synapse/data/homeserver.yaml
+sed -i '/^app_service_config_files:/,/^[^ ]/{ /^app_service_config_files:/d; /^[^ ]/!d }' synapse/data/homeserver.yaml
+
 # Remove old Element Call rate limit config if present (prevents duplication on re-run)
 sed -i '/^# Element Call: delayed event rate limiting/d' synapse/data/homeserver.yaml
 sed -i '/^max_event_delay_duration:/d' synapse/data/homeserver.yaml
@@ -1024,6 +1031,28 @@ rc_delayed_event_mgmt:
   burst_count: 20
 EOF
 fi
+
+# Generate double-puppeting appservice registration
+cat > appservices/doublepuppet.yaml << EOF
+id: doublepuppet
+url: null
+as_token: "${DOUBLEPUPPET_AS_TOKEN}"
+hs_token: "${DOUBLEPUPPET_HS_TOKEN}"
+sender_localpart: doublepuppet
+rate_limited: false
+
+namespaces:
+  users:
+    - regex: "@.*:${SERVER_NAME}"
+      exclusive: false
+EOF
+
+cat >> synapse/data/homeserver.yaml << EOF
+
+# Double-puppeting appservice
+app_service_config_files:
+  - /appservices/doublepuppet.yaml
+EOF
 
 # Restore ownership to Synapse uid so the container can read/write its own data
 sudo chown -R 991:991 synapse/data/
