@@ -1,0 +1,77 @@
+# =============================================================================
+# GitLab CI — matrix-2 deploy.sh integration tests
+#
+# Runs test_deploy.sh inside a Docker-in-Docker environment.
+# Both test scenarios execute sequentially in a single job (~15-20 min).
+#
+# Requirements on the GitLab runner:
+#   - Docker executor with privileged mode enabled (for dind)
+#   - OR shell executor with Docker + docker compose v2 already installed
+# =============================================================================
+
+stages:
+  - test
+
+variables:
+  # Docker-in-Docker TLS settings
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_TLS_VERIFY: "1"
+  DOCKER_CERT_PATH: "/certs/client"
+
+# ── Full integration test (config generation + live endpoint checks) ──────────
+deploy-integration:
+  stage: test
+  image: docker:25-cli
+  services:
+    - name: docker:25-dind
+      alias: docker
+      variables:
+        DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - apk add --no-cache bash openssl curl
+    - docker info   # smoke-test dind connection
+  script:
+    - chmod +x test_deploy.sh
+    - bash test_deploy.sh
+  after_script:
+    # Capture container logs on failure for easier debugging
+    - >
+      docker compose --project-directory .
+      -f compose-variants/docker-compose.local.yml
+      logs --no-color 2>&1 | tail -300 > ci-container-logs.txt || true
+  timeout: 25 minutes
+  artifacts:
+    when: on_failure
+    paths:
+      - ci-container-logs.txt
+    expire_in: 1 week
+  rules:
+    - if: '$CI_COMMIT_BRANCH'          # all branch pushes
+    - if: '$CI_MERGE_REQUEST_IID'      # all merge requests
+
+# ── Config-only test (fast path — no endpoint checks, still needs Docker) ─────
+#
+# Useful for quick feedback on config-generation changes without waiting for
+# full service startup. Docker is still required because deploy.sh runs
+# `docker run matrixdotorg/synapse:latest generate` to create homeserver.yaml.
+deploy-config-only:
+  stage: test
+  image: docker:25-cli
+  services:
+    - name: docker:25-dind
+      alias: docker
+      variables:
+        DOCKER_TLS_CERTDIR: "/certs"
+  variables:
+    SKIP_INTEGRATION: "true"
+  before_script:
+    - apk add --no-cache bash openssl curl
+    - docker info
+  script:
+    - chmod +x test_deploy.sh
+    - bash test_deploy.sh
+  timeout: 12 minutes
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+    - if: '$CI_MERGE_REQUEST_IID'

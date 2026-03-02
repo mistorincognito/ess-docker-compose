@@ -43,6 +43,7 @@ backups/
 # Production deployment configs (contain server IPs and secrets)
 caddy-server/
 authelia-server/
+caddy/Caddyfile
 caddy/Caddyfile.production
 
 # macOS

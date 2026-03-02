@@ -281,6 +281,18 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
     RTC_DOMAIN="rtc.example.test"
     CALL_DOMAIN="call.example.test"
 
+    # Matrix server name (MXID identity domain)
+    echo ""
+    echo -e "${CYAN}Matrix User ID format:${NC}"
+    echo -e "  [1] Short:     @user:${DOMAIN_BASE}  ← recommended"
+    echo -e "  [2] Subdomain: @user:${MATRIX_DOMAIN}"
+    read -p "Choose [1/2, default: 1]: " _sn_choice
+    if [[ "$_sn_choice" == "2" ]]; then
+        SERVER_NAME="${MATRIX_DOMAIN}"
+    else
+        SERVER_NAME="${DOMAIN_BASE}"
+    fi
+
     echo -e "${CYAN}Local Testing Configuration:${NC}"
     echo -e "  Matrix API:  https://${MATRIX_DOMAIN}"
     echo -e "  Element Web: https://${ELEMENT_DOMAIN}"
@@ -292,6 +304,9 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
     fi
     echo ""
     HOSTS_DOMAINS="${MATRIX_DOMAIN} ${ELEMENT_DOMAIN} ${AUTH_DOMAIN} ${AUTHELIA_DOMAIN}"
+    if [[ "$SERVER_NAME" != "$MATRIX_DOMAIN" ]]; then
+        HOSTS_DOMAINS="${SERVER_NAME} ${HOSTS_DOMAINS}"
+    fi
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
         HOSTS_DOMAINS="${HOSTS_DOMAINS} ${RTC_DOMAIN} ${CALL_DOMAIN}"
     fi
@@ -348,6 +363,18 @@ else
         CALL_DOMAIN="${CALL_SUBDOMAIN}.${DOMAIN_BASE}"
     fi
 
+    # Matrix server name (MXID identity domain)
+    echo ""
+    echo -e "${CYAN}Matrix User ID format:${NC}"
+    echo -e "  [1] Short:     @user:${DOMAIN_BASE}  ← recommended"
+    echo -e "  [2] Subdomain: @user:${MATRIX_DOMAIN}"
+    read -p "Choose [1/2, default: 1]: " _sn_choice
+    if [[ "$_sn_choice" == "2" ]]; then
+        SERVER_NAME="${MATRIX_DOMAIN}"
+    else
+        SERVER_NAME="${DOMAIN_BASE}"
+    fi
+
     echo ""
     echo -e "${CYAN}Backend Server Addresses (for Caddyfile):${NC}"
     echo -e "  ${YELLOW}Enter IP addresses or hostnames${NC}"
@@ -368,6 +395,7 @@ else
     echo ""
     echo -e "${GREEN}✓${NC} Configuration Summary:"
     echo -e "  Base Domain:       ${DOMAIN_BASE}"
+    echo -e "  Server Name:       ${SERVER_NAME}  (@user:${SERVER_NAME})"
     echo -e "  Matrix:            https://${MATRIX_DOMAIN}"
     echo -e "  Element:           https://${ELEMENT_DOMAIN}"
     echo -e "  MAS:               https://${AUTH_DOMAIN}"
@@ -441,7 +469,7 @@ ELEMENT_DOMAIN=${ELEMENT_DOMAIN}
 ADMIN_DOMAIN=${ADMIN_DOMAIN}
 AUTH_DOMAIN=${AUTH_DOMAIN}
 AUTHELIA_DOMAIN=${AUTHELIA_DOMAIN}
-SERVER_NAME=${MATRIX_DOMAIN}
+SERVER_NAME=${SERVER_NAME}
 
 # PostgreSQL
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -765,7 +793,7 @@ upstream_oauth2:
           set_email_verification: always
 
 matrix:
-  homeserver: '${MATRIX_DOMAIN}'
+  homeserver: '${SERVER_NAME}'
   endpoint: 'http://synapse:8008'
   secret: '${SYNAPSE_SHARED_SECRET}'
 
@@ -777,7 +805,7 @@ else
     cat >> mas/config/config.yaml << EOF
 
 matrix:
-  homeserver: '${MATRIX_DOMAIN}'
+  homeserver: '${SERVER_NAME}'
   endpoint: 'http://synapse:8008'
   secret: '${SYNAPSE_SHARED_SECRET}'
 
@@ -859,7 +887,7 @@ cat > element/config/config.json << EOF
     "default_server_config": {
         "m.homeserver": {
             "base_url": "https://${MATRIX_DOMAIN}",
-            "server_name": "${MATRIX_DOMAIN}"
+            "server_name": "${SERVER_NAME}"
         }
     },
     "brand": "Element",
@@ -880,7 +908,7 @@ cat > element/config/config.json << EOF
     "features": {
         "feature_oidc_aware_navigation": true${ELEMENT_CALL_FEATURES}
     },
-    "default_server_name": "${MATRIX_DOMAIN}",
+    "default_server_name": "${SERVER_NAME}",
     "disable_custom_urls": false,
     "disable_guests": true${ELEMENT_CALL_BLOCK}
 }
@@ -913,11 +941,13 @@ echo -e "${BLUE}[12/13] Generating Synapse configuration...${NC}"
 # Generate homeserver.yaml if it doesn't exist
 if [ ! -f "synapse/data/homeserver.yaml" ]; then
     print_info "Generating new homeserver.yaml..."
-    $DOCKER_CMD run -it --rm \
+    $DOCKER_CMD run --rm \
         -v $(pwd)/synapse/data:/data \
-        -e SYNAPSE_SERVER_NAME=${MATRIX_DOMAIN} \
+        -e SYNAPSE_SERVER_NAME=${SERVER_NAME} \
         -e SYNAPSE_REPORT_STATS=no \
         matrixdotorg/synapse:latest generate
+    # Fix ownership: synapse runs as uid 991 inside Docker; reclaim files for current user
+    sudo chown -R "$(id -u):$(id -g)" synapse/data/
     print_status "Synapse configuration generated"
 else
     print_info "Existing homeserver.yaml found - preserving custom configurations"
@@ -995,6 +1025,8 @@ rc_delayed_event_mgmt:
 EOF
 fi
 
+# Restore ownership to Synapse uid so the container can read/write its own data
+sudo chown -R 991:991 synapse/data/
 print_status "Database configuration updated with current credentials"
 echo ""
 
@@ -1005,10 +1037,10 @@ if [[ "$DEPLOYMENT_MODE" == "local" ]]; then
     # Pre-build JSON blobs for the local Caddyfile (single-line, no literal \n)
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
         LOCAL_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"},\"org.matrix.msc4143.rtc_foci\":[{\"type\":\"livekit\",\"livekit_service_url\":\"https://${RTC_DOMAIN}/livekit/jwt\"}]}"
-        LOCAL_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://${CALL_DOMAIN}\",\"participant_limit\":8,\"brand\":\"Element Call\"}}"
+        LOCAL_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${SERVER_NAME}\"}},\"default_server_name\":\"${SERVER_NAME}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://${CALL_DOMAIN}\",\"participant_limit\":8,\"brand\":\"Element Call\"}}"
     else
         LOCAL_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"}}"
-        LOCAL_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true}}"
+        LOCAL_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${SERVER_NAME}\"}},\"default_server_name\":\"${SERVER_NAME}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true}}"
     fi
 
     cat > caddy/Caddyfile << 'CADDYEOF'
@@ -1280,6 +1312,32 @@ ${ADMIN_DOMAIN}:443 {
 }
 EOF
 
+    # Append identity domain well-known block if SERVER_NAME differs from MATRIX_DOMAIN
+    if [[ "$SERVER_NAME" != "$MATRIX_DOMAIN" ]]; then
+        cat >> caddy/Caddyfile << EOF
+
+# =========================
+# Identity Domain (well-known delegation)
+# =========================
+${SERVER_NAME}:443 {
+    tls internal
+
+    @wk path /.well-known/matrix/client
+    handle @wk {
+        header Content-Type application/json
+        header Access-Control-Allow-Origin "*"
+        respond \`${LOCAL_WELLKNOWN_JSON}\` 200
+    }
+
+    @wk_server path /.well-known/matrix/server
+    handle @wk_server {
+        header Content-Type application/json
+        respond \`{"m.server":"${MATRIX_DOMAIN}:443"}\` 200
+    }
+}
+EOF
+    fi
+
     # Append Element Call blocks if enabled
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
         cat >> caddy/Caddyfile << EOF
@@ -1454,10 +1512,10 @@ if [[ "$DEPLOYMENT_MODE" == "production" ]]; then
     # Pre-build conditional JSON blobs for the Caddyfile
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
         PROD_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"},\"org.matrix.msc4143.rtc_foci\":[{\"type\":\"livekit\",\"livekit_service_url\":\"https://${RTC_DOMAIN}/livekit/jwt\"}]}"
-        PROD_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://${CALL_DOMAIN}\",\"participant_limit\":8,\"brand\":\"Element Call\"}}"
+        PROD_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${SERVER_NAME}\"}},\"default_server_name\":\"${SERVER_NAME}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true,\"feature_element_call_video_rooms\":true},\"element_call\":{\"url\":\"https://${CALL_DOMAIN}\",\"participant_limit\":8,\"brand\":\"Element Call\"}}"
     else
         PROD_WELLKNOWN_JSON="{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\"},\"m.authentication\":{\"issuer\":\"https://${AUTH_DOMAIN}/\"}}"
-        PROD_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${MATRIX_DOMAIN}\"}},\"default_server_name\":\"${MATRIX_DOMAIN}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true}}"
+        PROD_ELEMENT_CFG_JSON="{\"default_server_config\":{\"m.homeserver\":{\"base_url\":\"https://${MATRIX_DOMAIN}\",\"server_name\":\"${SERVER_NAME}\"}},\"default_server_name\":\"${SERVER_NAME}\",\"disable_custom_urls\":false,\"disable_guests\":true,\"features\":{\"feature_oidc_aware_navigation\":true}}"
     fi
 
     cat > caddy/Caddyfile.production << EOF
@@ -1611,6 +1669,29 @@ ${ADMIN_DOMAIN} {
     }
 }
 EOF
+
+    # Append identity domain well-known block if SERVER_NAME differs from MATRIX_DOMAIN
+    if [[ "$SERVER_NAME" != "$MATRIX_DOMAIN" ]]; then
+        cat >> caddy/Caddyfile.production << EOF
+
+# =========================
+# Identity Domain (well-known delegation)
+# =========================
+${SERVER_NAME} {
+    @wk path /.well-known/matrix/client
+    handle @wk {
+        header Content-Type application/json
+        respond \`${PROD_WELLKNOWN_JSON}\` 200
+    }
+
+    @wk_server path /.well-known/matrix/server
+    handle @wk_server {
+        header Content-Type application/json
+        respond \`{"m.server":"${MATRIX_DOMAIN}:443"}\` 200
+    }
+}
+EOF
+    fi
 
     # Append Element Call blocks to production Caddyfile if enabled
     if [[ "$USE_ELEMENT_CALL" == true ]]; then
