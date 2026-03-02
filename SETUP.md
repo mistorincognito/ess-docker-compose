@@ -23,6 +23,22 @@ Key variables:
 | `POSTGRES_PASSWORD` | Shared database password (same across all services) |
 | `MAS_SECRET_KEY` | 64-char hex encryption key for MAS |
 | `LIVEKIT_SECRET` | LiveKit API secret (only if Element Call enabled) |
+| `POSTGRES_IMAGE` | PostgreSQL image (default: `postgres:16-alpine`) |
+| `SYNAPSE_IMAGE` | Synapse image (default: `matrixdotorg/synapse:latest`) |
+| `ELEMENT_IMAGE` | Element Web image (default: `vectorim/element-web:latest`) |
+| `ELEMENT_ADMIN_IMAGE` | Element Admin image (default: `oci.element.io/element-admin:latest`) |
+| `REDIS_IMAGE` | Redis image (default: `redis:7-alpine`) |
+| `MAS_IMAGE` | MAS image (default: `ghcr.io/element-hq/matrix-authentication-service:latest`) |
+| `TELEGRAM_IMAGE` | mautrix-telegram image (default: `dock.mau.dev/mautrix/telegram:latest`) |
+| `WHATSAPP_IMAGE` | mautrix-whatsapp image (default: `dock.mau.dev/mautrix/whatsapp:latest`) |
+| `SIGNAL_IMAGE` | mautrix-signal image (default: `dock.mau.dev/mautrix/signal:latest`) |
+| `LIVEKIT_IMAGE` | LiveKit image (default: `livekit/livekit-server:latest`) |
+| `LK_JWT_IMAGE` | lk-jwt-service image (default: `ghcr.io/element-hq/lk-jwt-service:latest`) |
+| `ELEMENT_CALL_IMAGE` | Element Call image (default: `ghcr.io/element-hq/element-call:latest`) |
+| `AUTHELIA_IMAGE` | Authelia image (default: `authelia/authelia:latest`) |
+| `CADDY_IMAGE` | Caddy image (default: `caddy:2-alpine`) |
+
+All image variables are optional. If absent, each compose service falls back to the default tag via `${VAR:-default}` syntax, so `docker compose` works without a `.env` file.
 
 ### `synapse/data/homeserver.yaml`
 
@@ -203,6 +219,44 @@ keys:
 ```
 
 The key name `livekit-key` must match the `LIVEKIT_KEY` value in `docker-compose.yml` (hardcoded as `livekit-key`).
+
+---
+
+## Custom Docker Registry
+
+`deploy.sh` prompts for two optional image settings:
+
+**Custom registry prefix** — prepends a registry URL to every image. Useful for air-gapped environments or internal mirrors:
+
+```
+Custom Docker registry prefix: myregistry.example.com
+```
+
+Results in `.env` entries like:
+```
+SYNAPSE_IMAGE=myregistry.example.com/matrixdotorg/synapse:latest
+REDIS_IMAGE=myregistry.example.com/redis:7-alpine
+```
+
+**Hardened images** — uses [dhi.io](https://dhi.io) hardened variants for Redis, PostgreSQL, and Caddy. Takes priority over the custom registry prefix for those three images:
+
+```
+REDIS_IMAGE=dhi.io/redis:7
+POSTGRES_IMAGE=dhi.io/postgres:16
+CADDY_IMAGE=dhi.io/caddy:2
+```
+
+### Pull-through cache registries (Harbor, Artifactory, Nexus)
+
+Many enterprise registries act as pull-through caches that mirror images under the **full original registry path**. For example, Harbor's proxy cache serves Docker Hub images as:
+
+```
+myregistry.example.com/docker.io/library/redis:7-alpine
+myregistry.example.com/docker.io/matrixdotorg/synapse:latest
+myregistry.example.com/ghcr.io/element-hq/matrix-authentication-service:latest
+```
+
+The custom registry prefix in `deploy.sh` does **not** add the `docker.io/` or other intermediate path components — it produces `myregistry.example.com/redis:7-alpine`. If your mirror requires the full path structure, set the image variables manually in `.env` after running `deploy.sh`, or configure your registry to serve images without the intermediate path (most registries support this as an alias/rewrite).
 
 ---
 

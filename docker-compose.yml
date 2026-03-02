@@ -17,7 +17,7 @@
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     container_name: matrix-postgres
     restart: unless-stopped
     environment:
@@ -38,7 +38,7 @@ services:
 
   # Matrix Synapse Server
   synapse:
-    image: matrixdotorg/synapse:latest
+    image: ${SYNAPSE_IMAGE:-matrixdotorg/synapse:latest}
     container_name: matrix-synapse
     restart: unless-stopped
     environment:
@@ -64,7 +64,7 @@ services:
 
   # Element Web Client
   element:
-    image: vectorim/element-web:latest
+    image: ${ELEMENT_IMAGE:-vectorim/element-web:latest}
     container_name: matrix-element
     restart: unless-stopped
     volumes:
@@ -79,7 +79,7 @@ services:
 
   # Element Admin - Web UI for managing users/rooms via MAS
   element-admin:
-    image: oci.element.io/element-admin:latest
+    image: ${ELEMENT_ADMIN_IMAGE:-oci.element.io/element-admin:latest}
     container_name: matrix-element-admin
     restart: unless-stopped
     environment:
@@ -99,7 +99,7 @@ services:
   redis:
     profiles:
       - authelia  # Only started when Authelia profile is active
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:-redis:7-alpine}
     container_name: matrix-redis
     restart: unless-stopped
     networks:
@@ -112,7 +112,7 @@ services:
 
   # Matrix Authentication Service (MAS)
   mas:
-    image: ghcr.io/element-hq/matrix-authentication-service:latest
+    image: ${MAS_IMAGE:-ghcr.io/element-hq/matrix-authentication-service:latest}
     container_name: matrix-mas
     restart: unless-stopped
     environment:
@@ -139,7 +139,7 @@ services:
 
   # mautrix-telegram Bridge
   mautrix-telegram:
-    image: dock.mau.dev/mautrix/telegram:latest
+    image: ${TELEGRAM_IMAGE:-dock.mau.dev/mautrix/telegram:latest}
     container_name: matrix-bridge-telegram
     restart: unless-stopped
     volumes:
@@ -152,7 +152,7 @@ services:
 
   # mautrix-whatsapp Bridge
   mautrix-whatsapp:
-    image: dock.mau.dev/mautrix/whatsapp:latest
+    image: ${WHATSAPP_IMAGE:-dock.mau.dev/mautrix/whatsapp:latest}
     container_name: matrix-bridge-whatsapp
     restart: unless-stopped
     volumes:
@@ -165,7 +165,7 @@ services:
 
   # mautrix-signal Bridge
   mautrix-signal:
-    image: dock.mau.dev/mautrix/signal:latest
+    image: ${SIGNAL_IMAGE:-dock.mau.dev/mautrix/signal:latest}
     container_name: matrix-bridge-signal
     restart: unless-stopped
     volumes:
@@ -180,7 +180,7 @@ services:
   livekit:
     profiles:
       - element-call
-    image: livekit/livekit-server:latest
+    image: ${LIVEKIT_IMAGE:-livekit/livekit-server:latest}
     container_name: matrix-livekit
     restart: unless-stopped
     ports:
@@ -197,7 +197,7 @@ services:
   lk-jwt-service:
     profiles:
       - element-call
-    image: ghcr.io/element-hq/lk-jwt-service:latest
+    image: ${LK_JWT_IMAGE:-ghcr.io/element-hq/lk-jwt-service:latest}
     container_name: matrix-lk-jwt
     restart: unless-stopped
     ports:
@@ -218,7 +218,7 @@ services:
   element-call:
     profiles:
       - element-call
-    image: ghcr.io/element-hq/element-call:latest
+    image: ${ELEMENT_CALL_IMAGE:-ghcr.io/element-hq/element-call:latest}
     container_name: matrix-element-call
     restart: unless-stopped
     ports:
@@ -230,7 +230,7 @@ services:
   authelia:
     profiles:
       - authelia  # Only started when Authelia profile is active
-    image: authelia/authelia:latest
+    image: ${AUTHELIA_IMAGE:-authelia/authelia:latest}
     container_name: matrix-authelia
     restart: unless-stopped
     environment:
@@ -258,7 +258,7 @@ services:
   caddy:
     profiles:
       - single-machine  # Only started for single-machine deployments
-    image: caddy:2-alpine
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
     container_name: matrix-caddy
     restart: unless-stopped
     ports:

@@ -109,6 +109,12 @@ TELEGRAM_API_HASH=your_hash
 
 Bridges use double puppet support (messages appear from your actual Matrix user, not a bridge bot) and have encryption disabled for compatibility with MAS. See [BRIDGE_SETUP_GUIDE.md](BRIDGE_SETUP_GUIDE.md) for details.
 
+## Air-gapped / Custom Registry
+
+`deploy.sh` optionally prefixes all image references with a custom registry URL (for internal mirrors or air-gapped environments) and optionally switches Redis, PostgreSQL, and Caddy to hardened variants from [dhi.io](https://dhi.io). Both settings are written to `.env` and picked up automatically by Docker Compose.
+
+See [SETUP.md — Custom Docker Registry](SETUP.md#custom-docker-registry) for details, including a note on pull-through cache registries (Harbor, Artifactory, Nexus) that require the full registry path in image names.
+
 ## Requirements
 
 - Docker and Docker Compose v2

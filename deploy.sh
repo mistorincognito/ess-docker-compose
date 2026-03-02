@@ -180,6 +180,65 @@ else
 fi
 echo ""
 
+# ============================================================================
+# DOCKER REGISTRY AND HARDENED IMAGES
+# ============================================================================
+echo -e "${CYAN}Docker Image Configuration:${NC}"
+echo ""
+read -p "Custom Docker registry prefix (leave blank for default): " DOCKER_REGISTRY_INPUT
+DOCKER_REGISTRY="${DOCKER_REGISTRY_INPUT%/}"  # strip trailing slash
+[ -n "$DOCKER_REGISTRY" ] && DOCKER_REGISTRY="${DOCKER_REGISTRY}/"
+
+if [ -n "$DOCKER_REGISTRY" ]; then
+    echo -e "${GREEN}✓${NC} Custom registry: ${DOCKER_REGISTRY}"
+else
+    echo -e "${GREEN}✓${NC} Using default registries"
+fi
+
+USE_HARDENED_IMAGES=false
+read -p "Use hardened images from dhi.io for Redis/PostgreSQL/Caddy? [y/N]: " yn
+[[ "$yn" =~ ^[Yy] ]] && USE_HARDENED_IMAGES=true
+if [ "$USE_HARDENED_IMAGES" = true ]; then
+    echo -e "${GREEN}✓${NC} Hardened images (dhi.io) enabled for Redis/PostgreSQL/Caddy"
+else
+    echo -e "${GREEN}✓${NC} Using standard images"
+fi
+echo ""
+
+# Build image reference helper
+build_image() {
+    local image="$1"
+    if [ -n "$DOCKER_REGISTRY" ]; then
+        echo "${DOCKER_REGISTRY}${image}"
+    else
+        echo "${image}"
+    fi
+}
+
+# Standard images (respect custom registry)
+POSTGRES_IMAGE=$(build_image "postgres:16-alpine")
+SYNAPSE_IMAGE=$(build_image "matrixdotorg/synapse:latest")
+ELEMENT_IMAGE=$(build_image "vectorim/element-web:latest")
+ELEMENT_ADMIN_IMAGE=$(build_image "oci.element.io/element-admin:latest")
+MAS_IMAGE=$(build_image "ghcr.io/element-hq/matrix-authentication-service:latest")
+TELEGRAM_IMAGE=$(build_image "dock.mau.dev/mautrix/telegram:latest")
+WHATSAPP_IMAGE=$(build_image "dock.mau.dev/mautrix/whatsapp:latest")
+SIGNAL_IMAGE=$(build_image "dock.mau.dev/mautrix/signal:latest")
+LIVEKIT_IMAGE=$(build_image "livekit/livekit-server:latest")
+LK_JWT_IMAGE=$(build_image "ghcr.io/element-hq/lk-jwt-service:latest")
+ELEMENT_CALL_IMAGE=$(build_image "ghcr.io/element-hq/element-call:latest")
+AUTHELIA_IMAGE=$(build_image "authelia/authelia:latest")
+
+# Hardened images take priority for redis/postgres/caddy
+if [ "$USE_HARDENED_IMAGES" = true ]; then
+    REDIS_IMAGE="dhi.io/redis:7"
+    POSTGRES_IMAGE="dhi.io/postgres:16"
+    CADDY_IMAGE="dhi.io/caddy:2"
+else
+    REDIS_IMAGE=$(build_image "redis:7-alpine")
+    CADDY_IMAGE=$(build_image "caddy:2-alpine")
+fi
+
 # Function to generate secure random string (32 bytes base64)
 generate_secret() {
     openssl rand -base64 32 | tr -d "=+/" | cut -c1-32
@@ -403,6 +462,22 @@ MAS_SECRET_KEY=${MAS_SECRET_KEY}
 
 # Timezone
 TZ=${TZ:-Europe/Berlin}
+
+# Docker images
+POSTGRES_IMAGE=${POSTGRES_IMAGE}
+SYNAPSE_IMAGE=${SYNAPSE_IMAGE}
+ELEMENT_IMAGE=${ELEMENT_IMAGE}
+ELEMENT_ADMIN_IMAGE=${ELEMENT_ADMIN_IMAGE}
+REDIS_IMAGE=${REDIS_IMAGE}
+MAS_IMAGE=${MAS_IMAGE}
+TELEGRAM_IMAGE=${TELEGRAM_IMAGE}
+WHATSAPP_IMAGE=${WHATSAPP_IMAGE}
+SIGNAL_IMAGE=${SIGNAL_IMAGE}
+LIVEKIT_IMAGE=${LIVEKIT_IMAGE}
+LK_JWT_IMAGE=${LK_JWT_IMAGE}
+ELEMENT_CALL_IMAGE=${ELEMENT_CALL_IMAGE}
+AUTHELIA_IMAGE=${AUTHELIA_IMAGE}
+CADDY_IMAGE=${CADDY_IMAGE}
 EOF
 
 # Add production-specific variables
@@ -1245,6 +1320,23 @@ chmod 755 postgres/init postgres/config 2>/dev/null || true
 chmod 644 postgres/init/*.sql 2>/dev/null || true
 chmod 755 authelia/config mas/config element/config 2>/dev/null || true
 print_status "Permissions fixed"
+echo ""
+
+# Image summary
+echo -e "${CYAN}Docker images configured:${NC}"
+echo -e "  Synapse:       $SYNAPSE_IMAGE"
+echo -e "  Postgres:      $POSTGRES_IMAGE"
+echo -e "  Redis:         $REDIS_IMAGE"
+echo -e "  MAS:           $MAS_IMAGE"
+echo -e "  Element:       $ELEMENT_IMAGE"
+echo -e "  Element Admin: $ELEMENT_ADMIN_IMAGE"
+echo -e "  Authelia:      $AUTHELIA_IMAGE"
+echo -e "  Caddy:         $CADDY_IMAGE"
+if [[ "$USE_ELEMENT_CALL" == true ]]; then
+    echo -e "  LiveKit:       $LIVEKIT_IMAGE"
+    echo -e "  LK JWT:        $LK_JWT_IMAGE"
+    echo -e "  Element Call:  $ELEMENT_CALL_IMAGE"
+fi
 echo ""
 
 # Step 14: Start the stack
