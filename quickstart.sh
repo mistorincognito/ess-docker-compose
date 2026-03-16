@@ -236,7 +236,7 @@ cat > element/config/config.json << EOF
         "feature_oidc_aware_navigation": true${ELEMENT_CALL_FEATURES}
     },
     "default_server_name": "${MATRIX_DOMAIN}",
-    "disable_custom_urls": false,
+    "disable_custom_urls": true,
     "disable_guests": true${ELEMENT_CALL_BLOCK}
 }
 EOF
@@ -409,7 +409,7 @@ ${AUTH_DOMAIN} {
 }
 
 ${ELEMENT_DOMAIN} {
-    @cfg path /config.json
+    @cfg path /config.json /config.${ELEMENT_DOMAIN}.json
     handle @cfg {
         header Content-Type application/json
         header Cache-Control no-store
