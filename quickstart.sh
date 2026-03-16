@@ -170,6 +170,8 @@ matrix:
 passwords:
   enabled: true
 
+  
+
 email:
   from: '"Matrix" <noreply@${DOMAIN}>'
   transport: smtp
