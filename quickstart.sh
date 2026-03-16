@@ -390,7 +390,6 @@ ${MATRIX_DOMAIN} {
 ${AUTH_DOMAIN} {
     @disco path /.well-known/openid-configuration
     handle @disco {
-        header Access-Control-Allow-Origin "*"
         reverse_proxy mas:8080
     }
 
